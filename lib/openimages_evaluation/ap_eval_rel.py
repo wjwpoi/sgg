@@ -25,12 +25,11 @@
 
 """relationship AP evaluation code."""
 
-from six.moves import cPickle as pickle
 import logging
 import numpy as np
 import os
 from tqdm import tqdm
-from lib.fpn.box_intersections_cpu.bbox import bbox_overlaps
+from torchvision.ops import box_iou
 
 logger = logging.getLogger(__name__)
 
@@ -178,15 +177,15 @@ def ap_eval(image_ids,
             valid_mask = np.logical_and(LBLGT_s == lbl_s, LBLGT_o == lbl_o)
             if valid_mask.any():
                 if rel_or_phr:  # means it is evaluating relationships
-                    overlaps_s = bbox_overlaps(
+                    overlaps_s = box_iou(
                         bb_s[None, :].astype(dtype=np.float32, copy=False),
                         BBGT_s.astype(dtype=np.float32, copy=False))[0]
-                    overlaps_o = bbox_overlaps(
+                    overlaps_o = box_iou(
                         bb_o[None, :].astype(dtype=np.float32, copy=False),
                         BBGT_o.astype(dtype=np.float32, copy=False))[0]
                     overlaps = np.minimum(overlaps_s, overlaps_o)
                 else:
-                    overlaps = bbox_overlaps(
+                    overlaps = box_iou(
                         bb_r[None, :].astype(dtype=np.float32, copy=False),
                         BBGT_r.astype(dtype=np.float32, copy=False))[0]
                 overlaps *= valid_mask

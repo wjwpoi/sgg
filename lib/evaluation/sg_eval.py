@@ -5,7 +5,7 @@ import numpy as np
 from functools import reduce
 import math
 from lib.pytorch_misc import intersect_2d, argsort_desc
-from lib.fpn.box_intersections_cpu.bbox import bbox_overlaps
+from torchvision.ops import box_iou
 np.set_printoptions(precision=3)
 
 class BasicSceneGraphEvaluator:
@@ -212,11 +212,11 @@ def _compute_pred_matches(gt_triplets, pred_triplets,
             box_union = boxes.reshape((-1, 2, 4))
             box_union = np.concatenate((box_union.min(1)[:,:2], box_union.max(1)[:,2:]), 1)
 
-            inds = bbox_overlaps(gt_box_union[None], box_union)[0] >= iou_thresh
+            inds = box_iou(gt_box_union[None], box_union)[0] >= iou_thresh
 
         else:
-            sub_iou = bbox_overlaps(gt_box[None,:4], boxes[:, :4])[0]
-            obj_iou = bbox_overlaps(gt_box[None,4:], boxes[:, 4:])[0]
+            sub_iou = box_iou(gt_box[None,:4], boxes[:, :4])[0]
+            obj_iou = box_iou(gt_box[None,4:], boxes[:, 4:])[0]
 
             inds = (sub_iou >= iou_thresh) & (obj_iou >= iou_thresh)
 

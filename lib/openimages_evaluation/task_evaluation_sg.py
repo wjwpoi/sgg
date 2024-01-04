@@ -7,13 +7,12 @@ https://github.com/rowanz/neural-motifs/blob/master/lib/evaluation/sg_eval.py
 import os
 import numpy as np
 import logging
-from six.moves import cPickle as pickle
 import json
 import csv
 from tqdm import tqdm
 
 from functools import reduce
-from lib.fpn.box_intersections_cpu.bbox import bbox_overlaps
+from torchvision.ops import box_iou
 from lib.openimages_evaluation.ap_eval_rel import ap_eval, prepare_mAP_dets
 from lib.pytorch_misc import intersect_2d, argsort_desc
 
@@ -294,14 +293,14 @@ def _compute_pred_matches(gt_triplets, pred_triplets,
 
             gt_box_union = gt_box_union.astype(dtype=np.float32, copy=False)
             box_union = box_union.astype(dtype=np.float32, copy=False)
-            inds = bbox_overlaps(gt_box_union[None], 
+            inds = box_iou(gt_box_union[None], 
                                  box_union = box_union)[0] >= iou_thresh
 
         else:
             gt_box = gt_box.astype(dtype=np.float32, copy=False)
             boxes = boxes.astype(dtype=np.float32, copy=False)
-            sub_iou = bbox_overlaps(gt_box[None,:4], boxes[:, :4])[0]
-            obj_iou = bbox_overlaps(gt_box[None,4:], boxes[:, 4:])[0]
+            sub_iou = box_iou(gt_box[None,:4], boxes[:, :4])[0]
+            obj_iou = box_iou(gt_box[None,4:], boxes[:, 4:])[0]
 
             inds = (sub_iou >= iou_thresh) & (obj_iou >= iou_thresh)
 
