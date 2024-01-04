@@ -4,6 +4,7 @@ Utilities for bounding box manipulation and GIoU.
 """
 import torch
 from torchvision.ops.boxes import box_area
+import numpy as np
 
 def box_cxcywh_to_xyxy(x):
     x_c, y_c, w, h = x.unbind(-1)
@@ -107,3 +108,33 @@ def rescale_bboxes(out_bbox, size):
     b = box_cxcywh_to_xyxy(out_bbox)
     b = b * torch.tensor([img_w, img_h, img_w, img_h], dtype=torch.float32)
     return b
+
+
+def np_box_area(box):
+    # box = xyxy(4,n)
+    return (box[2] - box[0]) * (box[3] - box[1])
+
+
+def bbox_overlaps(box1, box2, eps=1e-7):
+    # https://github.com/pytorch/vision/blob/master/torchvision/ops/boxes.py
+    """
+    Return intersection-over-union (Jaccard index) of boxes.
+    Both sets of boxes are expected to be in (x1, y1, x2, y2) format.
+    Arguments:
+        box1 (Tensor[N, 4])
+        box2 (Tensor[M, 4])
+    Returns:
+        iou (Tensor[N, M]): the NxM matrix containing the pairwise
+            IoU values for every element in boxes1 and boxes2
+    Actually this is box_iou's numpy version
+    """
+
+    inter = np.prod(
+        np.clip((np.minimum(box1[:, None, 2:], box2[:, 2:]) - np.maximum(box1[:, None, :2], box2[:, :2])), 0, np.inf),
+        2)
+
+    area1 = np_box_area(box1.T)[:, None]
+    area2 = np_box_area(box2.T)
+
+    iou = inter / (area1 + area2 - inter + eps)
+    return iou
