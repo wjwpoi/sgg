@@ -82,8 +82,8 @@ def get_args_parser():
 
     # dataset parameters
     parser.add_argument('--dataset', default='vg')
-    parser.add_argument('--ann_path', default='./data/vg/', type=str)
-    parser.add_argument('--img_folder', default='/home/cong/Dokumente/tmp/data/visualgenome/images/', type=str)
+    parser.add_argument('--ann_path', default='/home/wjw/data/VG/', type=str)
+    parser.add_argument('--img_folder', default='/home/wjw/data/VG/VG_100K/', type=str)
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
@@ -94,7 +94,7 @@ def get_args_parser():
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
     parser.add_argument('--eval', action='store_true')
-    parser.add_argument('--num_workers', default=2, type=int)
+    parser.add_argument('--num_workers', default=1, type=int)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
