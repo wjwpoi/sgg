@@ -11,7 +11,7 @@ import numpy as np
 
 import torch
 
-from datasets.coco_eval import CocoEvaluator
+from dataset.coco_eval import CocoEvaluator
 import util.misc as utils
 from util.box_ops import rescale_bboxes
 from lib.evaluation.sg_eval import BasicSceneGraphEvaluator, calculate_mR_from_evaluator_list
