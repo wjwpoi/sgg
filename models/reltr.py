@@ -154,8 +154,8 @@ class SetCriterion(nn.Module):
         self.eos_coef = eos_coef
         self.losses = losses
         empty_weight = torch.ones(self.num_classes + 1)
-        # even though id=0 is N/A or __background__, the RelTR's code still add a new object/relation in the id=-1. 
-        # 我认为这是因为数据集从1开始标，所以上面的N/A之类的只是为了填充
+        # even though id=0 is N/A or __background__, the RelTR's code still add a new object/relation in the last. 
+        # I guess N/A and __background__ are placeholders since the datasets are labeled from 1 but not 0 
         empty_weight[-1] = self.eos_coef
         self.register_buffer('empty_weight', empty_weight)
 
