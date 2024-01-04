@@ -1,5 +1,7 @@
 ckpt/
+pth/
 *.json
 .idea/
 __pycache__/
 *.out
+*.pth
