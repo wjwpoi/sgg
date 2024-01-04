@@ -2,4 +2,4 @@ ckpt/
 *.json
 .idea/
 __pycache__/
-.out
+*.out
