@@ -88,7 +88,7 @@ class TransformerEncoder(nn.Module):
         return output
 
 
-class TransformerEncoderLayer(nn.Module):
+class TransformerEncoderLayer(nn.Module):  # Feature Encoder
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False):
@@ -186,6 +186,8 @@ class TransformerDecoder(nn.Module):
         if self.return_intermediate:
             return torch.stack(intermediate_entity), torch.stack(intermediate_triplet), \
                    torch.stack(intermediate_submaps), torch.stack(intermediate_objmaps)
+        else:  # though it should not be used, but may casued error under return_intermediate=False
+            return output_entity, output_triplet, sub_maps, obj_maps
 
 
 class TransformerDecoderLayer(nn.Module):
@@ -275,7 +277,7 @@ class TransformerDecoderLayer(nn.Module):
         tgt_entity = self.norm2_entity(tgt_entity)
 
         tgt2_entity = self.cross_attn_entity(query=self.with_pos_embed(tgt_entity, entity_pos),
-                                             key=self.with_pos_embed(memory, pos), value=memory, attn_mask=memory_mask,
+                                             key=self.with_pos_embed(memory, pos), value=memory, attn_mask=memory_mask,  # memory is the feature context from image
                                              key_padding_mask=memory_key_padding_mask)[0]
         tgt_entity = tgt_entity + self.dropout1_entity(tgt2_entity)
         tgt_entity = self.norm1_entity(tgt_entity)
