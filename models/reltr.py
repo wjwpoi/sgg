@@ -109,6 +109,9 @@ class RelTR(nn.Module):
         outputs_coord_obj = self.obj_bbox_embed(hs_obj).sigmoid()
 
         outputs_class_rel = self.rel_class_embed(torch.cat((hs_sub, hs_obj, so_masks), dim=-1))
+        if not self.training:
+            hs_sub, hs_obj = torch.split(hs_bias, self.hidden_dim, dim=-1)
+            outputs_class_rel -= self.rel_class_embed(torch.cat((hs_sub, hs_obj, so_masks), dim=-1))
 
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1],
                'sub_logits': outputs_class_sub[-1], 'sub_boxes': outputs_coord_sub[-1],
