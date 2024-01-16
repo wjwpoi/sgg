@@ -65,7 +65,7 @@ class RelTR(nn.Module):
         self.obj_bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
 
 
-    def forward(self, samples: NestedTensor):
+    def forward(self, samples: NestedTensor, b=1):
         """ The forward expects a NestedTensor, which consists of:
                - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
                - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
@@ -111,7 +111,7 @@ class RelTR(nn.Module):
         outputs_class_rel = self.rel_class_embed(torch.cat((hs_sub, hs_obj, so_masks), dim=-1))
         if not self.training:
             hs_sub, hs_obj = torch.split(hs_bias, self.hidden_dim, dim=-1)
-            outputs_class_rel -= self.rel_class_embed(torch.cat((hs_sub, hs_obj, so_masks), dim=-1))
+            outputs_class_rel -= b * self.rel_class_embed(torch.cat((hs_sub, hs_obj, so_masks), dim=-1))
 
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1],
                'sub_logits': outputs_class_sub[-1], 'sub_boxes': outputs_coord_sub[-1],
