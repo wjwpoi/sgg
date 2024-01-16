@@ -91,7 +91,7 @@ class RelTR(nn.Module):
 
         src, mask = features[-1].decompose()
         assert mask is not None
-        hs, hs_t, so_masks, _ = self.transformer(self.input_proj(src), mask, self.entity_embed.weight,
+        hs, hs_t, so_masks, _, hs_bias = self.transformer(self.input_proj(src), mask, self.entity_embed.weight,
                                                  self.triplet_embed.weight, pos[-1], self.so_embed.weight)
         so_masks = so_masks.detach()
         so_masks = self.so_mask_conv(so_masks.view(-1, 2, src.shape[-2],src.shape[-1])).view(hs_t.shape[0], hs_t.shape[1], hs_t.shape[2],-1)
