@@ -91,7 +91,7 @@ class RelTR(nn.Module):
 
         src, mask = features[-1].decompose()
         assert mask is not None
-        hs, hs_t, so_masks, _ = self.transformer(self.input_proj(src), mask, self.entity_embed.weight,
+        hs, hs_t, so_masks, hs_bias = self.transformer(self.input_proj(src), mask, self.entity_embed.weight,
                                                  self.triplet_embed.weight, pos[-1], self.so_embed.weight)
         so_masks = so_masks.detach()
         so_masks = self.so_mask_conv(so_masks.view(-1, 2, src.shape[-2],src.shape[-1])).view(hs_t.shape[0], hs_t.shape[1], hs_t.shape[2],-1)
@@ -109,9 +109,9 @@ class RelTR(nn.Module):
         outputs_coord_obj = self.obj_bbox_embed(hs_obj).sigmoid()
 
         outputs_class_rel = self.rel_class_embed(torch.cat((hs_sub, hs_obj, so_masks), dim=-1))
-        # if not self.training:
-        #     hs_sub, hs_obj = torch.split(hs_bias, self.hidden_dim, dim=-1)
-        #     outputs_class_rel -= b * self.rel_class_embed(torch.cat((hs_sub, hs_obj, so_masks), dim=-1))
+        if not self.training:
+            hs_sub, hs_obj = torch.split(hs_bias, self.hidden_dim, dim=-1)
+            outputs_class_rel -= b * self.rel_class_embed(torch.cat((hs_sub, hs_obj, so_masks), dim=-1))
 
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1],
                'sub_logits': outputs_class_sub[-1], 'sub_boxes': outputs_coord_sub[-1],
