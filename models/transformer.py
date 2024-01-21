@@ -54,14 +54,14 @@ class Transformer(nn.Module):
         mask = mask.flatten(1)
 
         memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
-        hs, hs_t, sub_maps, obj_maps, hs_bias = self.decoder(entity, triplet, memory, memory_key_padding_mask=mask,
+        hs, hs_t, sub_maps, obj_maps = self.decoder(entity, triplet, memory, memory_key_padding_mask=mask,
                                                     pos=pos_embed, entity_pos=entity_embed,
                                                     triplet_pos=triplet_embed, so_pos=so_embed)
 
         so_masks = torch.cat((sub_maps.reshape(sub_maps.shape[0], bs, sub_maps.shape[2], 1, h, w),
                               obj_maps.reshape(obj_maps.shape[0], bs, obj_maps.shape[2], 1, h, w)), dim=3)
 
-        return hs.transpose(1, 2), hs_t.transpose(1, 2), so_masks, memory.permute(1, 2, 0).view(bs, c, h, w), hs_bias.transpose(1, 2)
+        return hs.transpose(1, 2), hs_t.transpose(1, 2), so_masks, memory.permute(1, 2, 0).view(bs, c, h, w)#, hs_bias.transpose(1, 2)
 
 
 class TransformerEncoder(nn.Module):
@@ -172,7 +172,7 @@ class TransformerDecoder(nn.Module):
         intermediate_bias = []
 
         for layer in self.layers:
-            output_entity, output_triplet, sub_maps, obj_maps, bias_triple = layer(output_entity, output_triplet, entity_pos, triplet_pos, so_pos,
+            output_entity, output_triplet, sub_maps, obj_maps = layer(output_entity, output_triplet, entity_pos, triplet_pos, so_pos,
                                                                       memory, tgt_mask=tgt_mask, memory_mask=memory_mask,
                                                                       tgt_key_padding_mask=tgt_key_padding_mask,
                                                                       memory_key_padding_mask=memory_key_padding_mask, pos=pos)
@@ -183,13 +183,13 @@ class TransformerDecoder(nn.Module):
                 intermediate_triplet.append(output_triplet)
                 intermediate_submaps.append(sub_maps)
                 intermediate_objmaps.append(obj_maps)
-                intermediate_bias.append(bias_triple)
+                # intermediate_bias.append(bias_triple)
 
         if self.return_intermediate:
             return torch.stack(intermediate_entity), torch.stack(intermediate_triplet), \
-                   torch.stack(intermediate_submaps), torch.stack(intermediate_objmaps), torch.stack(intermediate_bias)
+                   torch.stack(intermediate_submaps), torch.stack(intermediate_objmaps)#, torch.stack(intermediate_bias)
         else:  # though it should not be used, but may casued error under return_intermediate=False
-            return output_entity, output_triplet, sub_maps, obj_maps, intermediate_bias
+            return output_entity, output_triplet, sub_maps, obj_maps#, bias_triple
 
 
 class TransformerDecoderLayer(nn.Module):
@@ -277,7 +277,7 @@ class TransformerDecoderLayer(nn.Module):
                                             key_padding_mask=tgt_key_padding_mask)[0]
         tgt_entity = tgt_entity + self.dropout2_entity(tgt2_entity)
         tgt_entity = self.norm2_entity(tgt_entity)
-        _tgt_entity = tgt_entity
+        # _tgt_entity = tgt_entity.detach()
 
         tgt2_entity = self.cross_attn_entity(query=self.with_pos_embed(tgt_entity, entity_pos),
                                              key=self.with_pos_embed(memory, pos), value=memory, attn_mask=memory_mask,  # memory is the feature context from image
@@ -310,12 +310,12 @@ class TransformerDecoderLayer(nn.Module):
         tgt_sub = tgt_sub + self.dropout1_sub(tgt2_sub)
         tgt_sub = self.norm1_sub(tgt_sub)
 
-        # debias
-        _tgt2_sub = self.cross_sub_entity(query=self.with_pos_embed(tgt_sub, triplet_pos),
-                                         key=_tgt_entity, value=_tgt_entity)[0]
-        _tgt_sub = tgt_sub + self.dropout2_sub(_tgt2_sub)
-        _tgt_sub = self.norm2_sub(_tgt_sub)
-        _tgt_sub = self.forward_ffn_sub(_tgt_sub)
+        # # debias
+        # _tgt2_sub = self.cross_sub_entity(query=self.with_pos_embed(tgt_sub, triplet_pos),
+        #                                  key=_tgt_entity, value=_tgt_entity)[0]
+        # _tgt_sub = tgt_sub + self.dropout2_sub(_tgt2_sub)
+        # _tgt_sub = self.norm2_sub(_tgt_sub)
+        # _tgt_sub = self.forward_ffn_sub(_tgt_sub)
 
         # subject branch - decoupled entity attention
         tgt2_sub = self.cross_sub_entity(query=self.with_pos_embed(tgt_sub, triplet_pos),
@@ -332,12 +332,12 @@ class TransformerDecoderLayer(nn.Module):
         tgt_obj = tgt_obj + self.dropout1_obj(tgt2_obj)
         tgt_obj = self.norm1_obj(tgt_obj)
 
-        # debias
-        _tgt2_obj = self.cross_obj_entity(query=self.with_pos_embed(tgt_obj, triplet_pos),
-                                         key=_tgt_entity, value=_tgt_entity)[0]
-        _tgt_obj = tgt_obj + self.dropout2_obj(_tgt2_obj)
-        _tgt_obj = self.norm2_obj(_tgt_obj)
-        _tgt_obj = self.forward_ffn_obj(_tgt_obj)
+        # # debias
+        # _tgt2_obj = self.cross_obj_entity(query=self.with_pos_embed(tgt_obj, triplet_pos),
+        #                                  key=_tgt_entity, value=_tgt_entity)[0]
+        # _tgt_obj = tgt_obj + self.dropout2_obj(_tgt2_obj)
+        # _tgt_obj = self.norm2_obj(_tgt_obj)
+        # _tgt_obj = self.forward_ffn_obj(_tgt_obj)
 
         # object branch - decoupled entity attention
         tgt2_obj = self.cross_obj_entity(query=self.with_pos_embed(tgt_obj, triplet_pos),
@@ -348,8 +348,8 @@ class TransformerDecoderLayer(nn.Module):
 
         tgt_triplet = torch.cat((tgt_sub, tgt_obj), dim=-1)
         # debias
-        _tgt_triplet = torch.cat((_tgt_sub, _tgt_obj), dim=-1)
-        return tgt_entity, tgt_triplet, sub_maps, obj_maps, _tgt_triplet
+        # _tgt_triplet = torch.cat((_tgt_sub, _tgt_obj), dim=-1)
+        return tgt_entity, tgt_triplet, sub_maps, obj_maps#, _tgt_triplet
 
 
 def _get_clones(module, N):
