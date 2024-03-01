@@ -85,7 +85,7 @@ def get_args_parser():
     parser.add_argument('--ann_path', default='/home/wjw/data/VG/', type=str)
     parser.add_argument('--img_folder', default='/home/wjw/data/VG/VG_100K/', type=str)
 
-    parser.add_argument('--output_dir', default='./pth/',
+    parser.add_argument('--output_dir', default='./ckpt_mamba/',
                         help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')

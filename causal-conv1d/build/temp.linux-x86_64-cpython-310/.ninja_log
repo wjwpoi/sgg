@@ -1,0 +1,5 @@
+# ninja log v5
+0	3652	1709219181184583836	/home/wjw/RelTR/causal-conv1d/build/temp.linux-x86_64-cpython-310/csrc/causal_conv1d_update.o	76ba1e5ec2cad75b
+0	9745	1709219187272409914	/home/wjw/RelTR/causal-conv1d/build/temp.linux-x86_64-cpython-310/csrc/causal_conv1d_fwd.o	aa98cb7aca4f1b65
+0	14655	1709219192184271225	/home/wjw/RelTR/causal-conv1d/build/temp.linux-x86_64-cpython-310/csrc/causal_conv1d.o	c69f84b749d335c1
+0	28282	1709219205795894454	/home/wjw/RelTR/causal-conv1d/build/temp.linux-x86_64-cpython-310/csrc/causal_conv1d_bwd.o	d63f3d286109d20f

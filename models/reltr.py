@@ -35,7 +35,7 @@ class RelTR(nn.Module):
         self.aux_loss = aux_loss
 
         self.entity_embed = nn.Embedding(num_entities, hidden_dim*2)
-        self.triplet_embed = nn.Embedding(num_triplets, hidden_dim*3)
+        self.triplet_embed = nn.Embedding(num_triplets, hidden_dim*2)
         self.so_embed = nn.Embedding(2, hidden_dim) # subject and object encoding
 
         # entity prediction
@@ -56,7 +56,7 @@ class RelTR(nn.Module):
                                         nn.Linear(512, 128))
 
         # predicate classification
-        self.rel_class_embed = MLP(hidden_dim*2+128, hidden_dim, num_rel_classes + 1, 2)
+        self.rel_class_embed = MLP(hidden_dim*2, hidden_dim, num_rel_classes + 1, 2)
 
         # subject/object label classfication and box regression
         self.sub_class_embed = nn.Linear(hidden_dim, num_classes + 1)
@@ -93,9 +93,9 @@ class RelTR(nn.Module):
         assert mask is not None
         hs, hs_t, so_masks, _ = self.transformer(self.input_proj(src), mask, self.entity_embed.weight,
                                                  self.triplet_embed.weight, pos[-1], self.so_embed.weight)
-        so_masks = so_masks.detach()
-        so_masks = self.so_mask_conv(so_masks.view(-1, 2, src.shape[-2],src.shape[-1])).view(hs_t.shape[0], hs_t.shape[1], hs_t.shape[2],-1)
-        so_masks = self.so_mask_fc(so_masks)
+        # so_masks = so_masks.detach()
+        # so_masks = self.so_mask_conv(so_masks.view(-1, 2, src.shape[-2],src.shape[-1])).view(hs_t.shape[0], hs_t.shape[1], hs_t.shape[2],-1)
+        # so_masks = self.so_mask_fc(so_masks)
 
         hs_sub, hs_obj = torch.split(hs_t, self.hidden_dim, dim=-1)
 
@@ -108,7 +108,7 @@ class RelTR(nn.Module):
         outputs_class_obj = self.obj_class_embed(hs_obj)
         outputs_coord_obj = self.obj_bbox_embed(hs_obj).sigmoid()
 
-        outputs_class_rel = self.rel_class_embed(torch.cat((hs_sub, hs_obj, so_masks), dim=-1))
+        outputs_class_rel = self.rel_class_embed(torch.cat((hs_sub, hs_obj), dim=-1))  # so_masks
 
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1],
                'sub_logits': outputs_class_sub[-1], 'sub_boxes': outputs_coord_sub[-1],
@@ -282,7 +282,7 @@ class SetCriterion(nn.Module):
             'labels': self.loss_labels,
             'cardinality': self.loss_cardinality,
             'boxes': self.loss_boxes,
-            'relations': self.loss_relations
+            'relations': self.loss_relations,
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, num_boxes, **kwargs)

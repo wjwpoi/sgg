@@ -9,6 +9,8 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
+from models.models_mamba import create_block
+from timm.models.layers import DropPath
 
 
 class Transformer(nn.Module):
@@ -24,10 +26,9 @@ class Transformer(nn.Module):
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
         self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
 
-        decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
-                                                dropout, activation, )
+        kargs = {'d_model': d_model, 'nhead': nhead, 'dim_feedforward': dim_feedforward, 'dropout': dropout, 'activation': activation}
 
-        self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, return_intermediate=return_intermediate_dec)
+        self.decoder = TransformerDecoder(kargs, num_decoder_layers, return_intermediate=return_intermediate_dec)
 
         self._reset_parameters()
         self.d_model = d_model
@@ -45,7 +46,7 @@ class Transformer(nn.Module):
         pos_embed = pos_embed.flatten(2).permute(2, 0, 1)
 
         entity_embed, entity = torch.split(entity_embed, c, dim=1)
-        triplet_embed, triplet = torch.split(triplet_embed, [c, 2 * c], dim=1)
+        triplet_embed, triplet = torch.split(triplet_embed, c, dim=1)
 
         entity_embed = entity_embed.unsqueeze(1).repeat(1, bs, 1)
         triplet_embed = triplet_embed.unsqueeze(1).repeat(1, bs, 1)
@@ -58,10 +59,25 @@ class Transformer(nn.Module):
                                                     pos=pos_embed, entity_pos=entity_embed,
                                                     triplet_pos=triplet_embed, so_pos=so_embed)
 
-        so_masks = torch.cat((sub_maps.reshape(sub_maps.shape[0], bs, sub_maps.shape[2], 1, h, w),
-                              obj_maps.reshape(obj_maps.shape[0], bs, obj_maps.shape[2], 1, h, w)), dim=3)
+        # so_masks = torch.cat((sub_maps.reshape(sub_maps.shape[0], bs, sub_maps.shape[2], 1, h, w),
+        #                       obj_maps.reshape(obj_maps.shape[0], bs, obj_maps.shape[2], 1, h, w)), dim=3)
+        so_masks = 0
 
         return hs.transpose(1, 2), hs_t.transpose(1, 2), so_masks, memory.permute(1, 2, 0).view(bs, c, h, w)
+
+class VimDecoder(nn.Module):
+    def __init__(self, patch_size, hidden_dim) -> None:
+        super().__init__()
+        self.patch_size = patch_size
+        self.hidden_dim = hidden_dim
+        
+        self.norm = nn.LayerNorm()
+        self.x_linear = nn.Linear(patch_size, hidden_dim)
+        self.x_forward = nn.Sequential(
+            nn.Conv1d(hidden_dim,)
+        )
+
+        self.z_linear = nn.Linear(patch_size, hidden_dim)
 
 
 class TransformerEncoder(nn.Module):
@@ -150,9 +166,17 @@ class TransformerEncoderLayer(nn.Module):  # Feature Encoder
 
 class TransformerDecoder(nn.Module):
 
-    def __init__(self, decoder_layer, num_layers, return_intermediate=False):
+    def __init__(self, kargs, num_layers, return_intermediate=False, drop_path_rate=0.1):
         super().__init__()
-        self.layers = _get_clones(decoder_layer, num_layers)
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, num_layers)]  # stochastic depth decay rule
+        # import ipdb;ipdb.set_trace()
+        inter_dpr = [0.0] + dpr
+        # self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0. else nn.Identity()
+        self.layers = nn.ModuleList(
+            [TransformerDecoderLayer(drop_path=inter_dpr[i], depth=i, **kargs) for i in range(num_layers)]
+            )
+
+        # self.layers = _get_clones(decoder_layer, num_layers)
         self.num_layers = num_layers
         self.return_intermediate = return_intermediate
 
@@ -169,12 +193,16 @@ class TransformerDecoder(nn.Module):
         intermediate_triplet = []
         intermediate_submaps = []
         intermediate_objmaps = []
+        residual = None
 
-        for layer in self.layers:
-            output_entity, output_triplet, sub_maps, obj_maps = layer(output_entity, output_triplet, entity_pos, triplet_pos, so_pos,
+        for i, layer in enumerate(self.layers):
+            if i > 0:
+                hs_sub, hs_obj = torch.split(output_triplet, output_triplet.shape[-1]//2, dim=-1)
+                output_triplet = hs_sub + hs_obj
+            output_entity, output_triplet, sub_maps, obj_maps, residual = layer(output_entity, output_triplet, entity_pos, triplet_pos, so_pos,
                                                                       memory, tgt_mask=tgt_mask, memory_mask=memory_mask,
                                                                       tgt_key_padding_mask=tgt_key_padding_mask,
-                                                                      memory_key_padding_mask=memory_key_padding_mask, pos=pos)
+                                                                      memory_key_padding_mask=memory_key_padding_mask, pos=pos, residual=residual)
 
 
             if self.return_intermediate:
@@ -192,7 +220,7 @@ class TransformerDecoder(nn.Module):
 
 class TransformerDecoderLayer(nn.Module):
     """triplet decoder layer"""
-    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
+    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu", drop_path=None, depth=None):
         super().__init__()
         self.activation = _get_activation_fn(activation)
 
@@ -243,6 +271,21 @@ class TransformerDecoderLayer(nn.Module):
         self.dropout4_obj = nn.Dropout(dropout)
         self.norm3_obj = nn.LayerNorm(d_model)
 
+        self.mamba_block = create_block(
+                                d_model,
+                                ssm_cfg=None,
+                                norm_epsilon=1e-5,
+                                rms_norm=True,
+                                residual_in_fp32=True,
+                                fused_add_norm=True,
+                                layer_idx=depth,
+                                if_bimamba=False,
+                                bimamba_type='v2',
+                                drop_path=drop_path,
+                                if_devide_out=True,
+                                init_layer_scale=True,
+                            )
+
     def forward_ffn_entity(self, tgt):
         tgt2 = self.linear2_entity(self.dropout3_entity(self.activation(self.linear1_entity(tgt))))
         tgt = tgt + self.dropout4_entity(tgt2)
@@ -267,7 +310,7 @@ class TransformerDecoderLayer(nn.Module):
                 memory_mask: Optional[Tensor] = None,
                 tgt_key_padding_mask: Optional[Tensor] = None,
                 memory_key_padding_mask: Optional[Tensor] = None,
-                pos: Optional[Tensor] = None):
+                pos: Optional[Tensor] = None, residual = None):
 
         # entity layer
         q_entity = k_entity = self.with_pos_embed(tgt_entity, entity_pos)
@@ -283,54 +326,59 @@ class TransformerDecoderLayer(nn.Module):
         tgt_entity = self.norm1_entity(tgt_entity)
         tgt_entity = self.forward_ffn_entity(tgt_entity)
 
-        # triplet layer
-        # coupled self attention
-        t_num = triplet_pos.shape[0]
-        h_dim = triplet_pos.shape[2]
-        tgt_sub, tgt_obj = torch.split(tgt_triplet, h_dim, dim=-1)
-        q_sub = k_sub = self.with_pos_embed(self.with_pos_embed(tgt_sub, triplet_pos), so_pos[0])
-        q_obj = k_obj = self.with_pos_embed(self.with_pos_embed(tgt_obj, triplet_pos), so_pos[1])
-        q_so = torch.cat((q_sub, q_obj), dim=0)
-        k_so = torch.cat((k_sub, k_obj), dim=0)
-        tgt_so = torch.cat((tgt_sub, tgt_obj), dim=0)
+        # # triplet layer
+        # # coupled self attention
+        # t_num = triplet_pos.shape[0]
+        # h_dim = triplet_pos.shape[2]
+        # tgt_sub, tgt_obj = torch.split(tgt_triplet, h_dim, dim=-1)
+        # q_sub = k_sub = self.with_pos_embed(self.with_pos_embed(tgt_sub, triplet_pos), so_pos[0])
+        # q_obj = k_obj = self.with_pos_embed(self.with_pos_embed(tgt_obj, triplet_pos), so_pos[1])
+        # q_so = torch.cat((q_sub, q_obj), dim=0)
+        # k_so = torch.cat((k_sub, k_obj), dim=0)
+        # tgt_so = torch.cat((tgt_sub, tgt_obj), dim=0)
 
-        tgt2_so = self.self_attn_so(q_so, k_so, tgt_so)[0]
-        tgt_so = tgt_so + self.dropout2_so(tgt2_so)
-        tgt_so = self.norm2_so(tgt_so)
-        tgt_sub, tgt_obj = torch.split(tgt_so, t_num, dim=0)
+        # tgt2_so = self.self_attn_so(q_so, k_so, tgt_so)[0]
+        # tgt_so = tgt_so + self.dropout2_so(tgt2_so)
+        # tgt_so = self.norm2_so(tgt_so)
+        # tgt_sub, tgt_obj = torch.split(tgt_so, t_num, dim=0)
 
-        # subject branch - decoupled visual attention
-        tgt2_sub, sub_maps = self.cross_attn_sub(query=self.with_pos_embed(tgt_sub, triplet_pos),
-                                                 key=self.with_pos_embed(memory, pos),
-                                                 value=memory, attn_mask=memory_mask,
-                                                 key_padding_mask=memory_key_padding_mask)
-        tgt_sub = tgt_sub + self.dropout1_sub(tgt2_sub)
-        tgt_sub = self.norm1_sub(tgt_sub)
+        # # subject branch - decoupled visual attention
+        # tgt2_sub, sub_maps = self.cross_attn_sub(query=self.with_pos_embed(tgt_sub, triplet_pos),
+        #                                          key=self.with_pos_embed(memory, pos),
+        #                                          value=memory, attn_mask=memory_mask,
+        #                                          key_padding_mask=memory_key_padding_mask)
+        # tgt_sub = tgt_sub + self.dropout1_sub(tgt2_sub)
+        # tgt_sub = self.norm1_sub(tgt_sub)
+
+        tgt_triplet = tgt_triplet.permute(1, 0, 2)
+        tgt_sub, tgt_obj, residual = self.mamba_block(tgt_triplet, residual)
+        tgt_sub = tgt_sub.permute(1, 0, 2)
+        tgt_obj = tgt_obj.permute(1, 0, 2)
 
         # subject branch - decoupled entity attention
-        tgt2_sub = self.cross_sub_entity(query=self.with_pos_embed(tgt_sub, triplet_pos),
-                                         key=tgt_entity, value=tgt_entity)[0]
+        tgt2_sub, sub_maps = self.cross_sub_entity(query=self.with_pos_embed(tgt_sub, triplet_pos),
+                                         key=tgt_entity, value=tgt_entity)
         tgt_sub = tgt_sub + self.dropout2_sub(tgt2_sub)
         tgt_sub = self.norm2_sub(tgt_sub)
         tgt_sub = self.forward_ffn_sub(tgt_sub)
 
-        # object branch - decoupled visual attention
-        tgt2_obj, obj_maps = self.cross_attn_obj(query=self.with_pos_embed(tgt_obj, triplet_pos),
-                                                 key=self.with_pos_embed(memory, pos),
-                                                 value=memory, attn_mask=memory_mask,
-                                                 key_padding_mask=memory_key_padding_mask)
-        tgt_obj = tgt_obj + self.dropout1_obj(tgt2_obj)
-        tgt_obj = self.norm1_obj(tgt_obj)
+        # # object branch - decoupled visual attention
+        # tgt2_obj, obj_maps = self.cross_attn_obj(query=self.with_pos_embed(tgt_obj, triplet_pos),
+        #                                          key=self.with_pos_embed(memory, pos),
+        #                                          value=memory, attn_mask=memory_mask,
+        #                                          key_padding_mask=memory_key_padding_mask)
+        # tgt_obj = tgt_obj + self.dropout1_obj(tgt2_obj)
+        # tgt_obj = self.norm1_obj(tgt_obj)
 
         # object branch - decoupled entity attention
-        tgt2_obj = self.cross_obj_entity(query=self.with_pos_embed(tgt_obj, triplet_pos),
-                                         key=tgt_entity, value=tgt_entity)[0]
+        tgt2_obj, obj_maps = self.cross_obj_entity(query=self.with_pos_embed(tgt_obj, triplet_pos),
+                                         key=tgt_entity, value=tgt_entity)
         tgt_obj = tgt_obj + self.dropout2_obj(tgt2_obj)
         tgt_obj = self.norm2_obj(tgt_obj)
         tgt_obj = self.forward_ffn_obj(tgt_obj)
 
         tgt_triplet = torch.cat((tgt_sub, tgt_obj), dim=-1)
-        return tgt_entity, tgt_triplet, sub_maps, obj_maps
+        return tgt_entity, tgt_triplet, sub_maps, obj_maps, residual
 
 
 def _get_clones(module, N):
