@@ -351,7 +351,7 @@ class TransformerDecoderLayer(nn.Module):
         # tgt_sub = self.norm1_sub(tgt_sub)
 
         tgt_triplet = tgt_triplet.permute(1, 0, 2)
-        tgt_sub, tgt_obj, residual = self.mamba_block(tgt_triplet, residual)
+        tgt_sub, tgt_obj, residual = self.mamba_block(tgt_triplet)
         tgt_sub = tgt_sub.permute(1, 0, 2)
         tgt_obj = tgt_obj.permute(1, 0, 2)
 
